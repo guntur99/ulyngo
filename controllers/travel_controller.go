@@ -91,11 +91,13 @@ type AddMarkerInput struct {
 	Deskripsi string  `json:"deskripsi"`
 	Latitude  float64 `json:"latitude" binding:"required"`
 	Longitude float64 `json:"longitude" binding:"required"`
+	Category  string  `json:"category"` // Tambahkan Category
 }
 
 // AddMarker adalah metode dari TravelController yang menambahkan marker baru ke database.
 // Membutuhkan token JWT dan akan menyimpan DitambahkanOlehUserId.
 func (tc *TravelController) AddMarker(c *gin.Context) {
+
 	var input AddMarkerInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -110,6 +112,7 @@ func (tc *TravelController) AddMarker(c *gin.Context) {
 	}
 	addedByUserID := userID.(string) // Konversi ke string (UUID)
 
+	// c.JSON(http.StatusOK, gin.H{"message": input}) // Hapus ini, karena akan mengirim respons ganda
 	marker := models.Place{
 		Nama:                  input.Nama,
 		Deskripsi:             input.Deskripsi,
@@ -132,6 +135,7 @@ type UpdateMarkerInput struct {
 	Deskripsi             *string  `json:"deskripsi"`
 	Latitude              *float64 `json:"latitude"`
 	Longitude             *float64 `json:"longitude"`
+	Category              *string  `json:"category"`                 // Tambahkan Category
 	DitambahkanOlehUserId *string  `json:"ditambahkan_oleh_user_id"` // Ini tidak perlu di-update, hanya untuk referensi
 }
 

@@ -19,6 +19,15 @@ import (
 // Ini akan memverifikasi token JWT dari header Authorization.
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// --- PERBAIKAN CORS PREFLIGHT DI SINI ---
+		// Jika metode permintaan adalah OPTIONS, langsung lewati ke handler berikutnya (atau CORS middleware Gin).
+		// Permintaan OPTIONS tidak boleh diautentikasi.
+		if c.Request.Method == "OPTIONS" {
+			c.Next()
+			return
+		}
+		// --- AKHIR PERBAIKAN ---
+
 		tokenString := c.GetHeader("Authorization")
 		if tokenString == "" || !strings.HasPrefix(tokenString, "Bearer ") {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization token required"})
@@ -63,16 +72,31 @@ func main() {
 	gin.SetMode(gin.ReleaseMode) // Disarankan untuk produksi
 	router := gin.Default()
 
+	// Dapatkan FRONTEND_ORIGIN dari variabel lingkungan.
+	// Ini adalah pendekatan yang direkomendasikan untuk produksi agar menentukan asal yang diizinkan.
+	// Untuk pengembangan, Anda bisa mengaturnya ke "http://localhost:3000" atau sejenisnya.
+	// Jika tidak disetel, akan default ke "*" tetapi perhatikan implikasinya dengan AllowCredentials.
+	frontendOrigin := os.Getenv("FRONTEND_ORIGIN")
+	if frontendOrigin == "" {
+		frontendOrigin = "*" // Default ke semua asal untuk kenyamanan dalam pengembangan, tetapi berhati-hatilah.
+		log.Println("WARNING: FRONTEND_ORIGIN environment variable not set. Using '*' for CORS. THIS IS NOT RECOMMENDED FOR PRODUCTION.")
+	} else if frontendOrigin == "*" && os.Getenv("GIN_MODE") != "debug" { // Peringatan lebih keras jika di mode non-debug
+		log.Println("CRITICAL WARNING: FRONTEND_ORIGIN is set to '*' with Access-Control-Allow-Credentials 'true'. This is a security risk and may cause CORS errors in production browsers. Please specify a concrete origin for production.")
+	}
+
 	// Middleware CORS untuk mengizinkan permintaan dari frontend
 	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // Sesuaikan untuk produksi
+		// Set asal spesifik yang diizinkan.
+		c.Writer.Header().Set("Access-Control-Allow-Origin", frontendOrigin)
+		// Access-Control-Allow-Credentials harus true jika frontend mengirim cookie atau Authorization header
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH") // Tambahkan PATCH/PUT untuk update
 
 		// Menangani preflight OPTIONS request
+		// Browser mengirim OPTIONS request terlebih dahulu untuk memeriksa apakah permintaan diizinkan
 		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent) // 204 No Content
+			c.AbortWithStatus(http.StatusNoContent) // Mengirim 204 No Content untuk preflight berhasil
 			return
 		}
 		c.Next()
@@ -106,9 +130,11 @@ func main() {
 		c.Next()
 	}
 
-	protectedMarkerRoutes.Use(AuthMiddleware(), adminOnly) // Hanya admin yang bisa akses
+	// --- PERBAIKAN CORS PREFLIGHT: AuthMiddleware() sudah disesuaikan ---
+	protectedMarkerRoutes.Use(AuthMiddleware(), adminOnly) // Sekarang AuthMiddleware akan mengizinkan OPTIONS
 	{
-		protectedMarkerRoutes.POST("/", travelController.AddMarker)         // Menambah marker
+		// Mengubah rute POST dari "/" menjadi "" untuk menghilangkan trailing slash
+		protectedMarkerRoutes.POST("", travelController.AddMarker)          // Menambah marker
 		protectedMarkerRoutes.PUT("/:id", travelController.UpdateMarker)    // Memperbarui marker berdasarkan ID
 		protectedMarkerRoutes.DELETE("/:id", travelController.DeleteMarker) // Menghapus marker berdasarkan ID
 	}
