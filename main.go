@@ -66,7 +66,18 @@ func main() {
 	// Ini akan membuat tabel jika belum ada, atau memperbarui skema.
 	// Jika ada perubahan tipe ID dari uint ke string (UUID), Anda mungkin perlu
 	// menghapus tabel lama di database Anda untuk migrasi yang bersih saat pengembangan.
-	utils.DB.AutoMigrate(&models.User{}, &models.Marker{})
+	utils.DB.AutoMigrate(
+		&models.User{},
+		&models.Preference{},
+		&models.Marker{},
+		&models.MarkerImage{},
+		&models.MarkerCategory{},
+		&models.MarkerTag{},
+		&models.MarkerHasTag{}, // Jika Anda ingin GORM mengelola tabel join ini secara eksplisit
+		&models.MarkerReview{},
+		&models.Route{},
+		&models.UserActivityLog{},
+	)
 
 	// Mengatur mode Gin (misal: debug, release)
 	gin.SetMode(gin.ReleaseMode) // Disarankan untuk produksi

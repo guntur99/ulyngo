@@ -11,6 +11,7 @@ import (
 	"ulyngo/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm" // Import gorm untuk akses database
 )
 
@@ -76,7 +77,7 @@ func (tc *TravelController) GetDirections(c *gin.Context) {
 
 // GetMarkers adalah metode dari TravelController yang mengambil semua marker dari database.
 func (tc *TravelController) GetMarkers(c *gin.Context) {
-	var markers []models.Place
+	var markers []models.Marker
 	// Menggunakan dependensi DB yang di-inject untuk mengambil markers
 	if err := tc.DB.Find(&markers).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch markers: " + err.Error()})
@@ -87,11 +88,13 @@ func (tc *TravelController) GetMarkers(c *gin.Context) {
 
 // AddMarkerInput adalah struktur untuk data yang diterima saat menambah marker baru.
 type AddMarkerInput struct {
-	Nama      string  `json:"nama" binding:"required"`
-	Deskripsi string  `json:"deskripsi"`
-	Latitude  float64 `json:"latitude" binding:"required"`
-	Longitude float64 `json:"longitude" binding:"required"`
-	Category  string  `json:"category"` // Tambahkan Category
+	Name          string    `json:"name" binding:"required"`
+	Description   string    `json:"description" binding:"required"`
+	Latitude      float64   `json:"latitude" binding:"required"`
+	Longitude     float64   `json:"longitude" binding:"required"`
+	CategoryID    uuid.UUID `json:"category_id"`      // Tambahkan CategoryID
+	AddedByUserId string    `json:"added_by_user_id"` // Ini akan diisi otomatis dari token JWT
+
 }
 
 // AddMarker adalah metode dari TravelController yang menambahkan marker baru ke database.
@@ -112,13 +115,23 @@ func (tc *TravelController) AddMarker(c *gin.Context) {
 	}
 	addedByUserID := userID.(string) // Konversi ke string (UUID)
 
+	// Konversi string ke uuid.UUID
+	addedByUserUUID, err := uuid.Parse(addedByUserID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
 	// c.JSON(http.StatusOK, gin.H{"message": input}) // Hapus ini, karena akan mengirim respons ganda
-	marker := models.Place{
-		Nama:                  input.Nama,
-		Deskripsi:             input.Deskripsi,
-		Latitude:              input.Latitude,
-		Longitude:             input.Longitude,
-		DitambahkanOlehUserId: addedByUserID, // Mengisi DitambahkanOlehUserId
+	marker := models.Marker{
+		Name:          input.Name,
+		Description:   &input.Description,
+		Latitude:      input.Latitude,
+		Longitude:     input.Longitude,
+		AddedByUserID: addedByUserUUID,  // Mengisi DitambahkanOlehUserId
+		CategoryID:    input.CategoryID, // Mengisi CategoryID
+		CreatedAt:     time.Now(),       // Set waktu pembuatan
+		UpdatedAt:     time.Now(),       // Set waktu pembaruan
 	}
 	// Menyimpan marker ke database
 	if err := tc.DB.Create(&marker).Error; err != nil {
@@ -131,12 +144,13 @@ func (tc *TravelController) AddMarker(c *gin.Context) {
 
 // UpdateMarkerInput adalah struktur untuk data yang diterima saat memperbarui marker.
 type UpdateMarkerInput struct {
-	Nama                  *string  `json:"nama"` // Gunakan pointer agar bisa null (opsional)
-	Deskripsi             *string  `json:"deskripsi"`
-	Latitude              *float64 `json:"latitude"`
-	Longitude             *float64 `json:"longitude"`
-	Category              *string  `json:"category"`                 // Tambahkan Category
-	DitambahkanOlehUserId *string  `json:"ditambahkan_oleh_user_id"` // Ini tidak perlu di-update, hanya untuk referensi
+	Name          *string    `json:"name"` // Gunakan pointer agar bisa null (opsional)
+	Description   *string    `json:"description"`
+	Latitude      *float64   `json:"latitude"`
+	Longitude     *float64   `json:"longitude"`
+	CategoryID    *uuid.UUID `json:"category_id"`              // Tambahkan CategoryID
+	AddedByUserID *string    `json:"ditambahkan_oleh_user_id"` // Ini tidak perlu di-update, hanya untuk referensi
+	UpdatedAt     *time.Time `json:"updated_at"`               // Ini tidak perlu di-update, hanya untuk referensi
 }
 
 // UpdateMarker adalah metode dari TravelController yang memperbarui marker yang sudah ada.
@@ -157,7 +171,7 @@ func (tc *TravelController) UpdateMarker(c *gin.Context) {
 	}
 	ownerUserID := userID.(string)
 
-	var marker models.Place
+	var marker models.Marker
 	// Cari marker berdasarkan ID dan pastikan DitambahkanOlehUserId cocok (kepemilikan)
 	if err := tc.DB.Where("id = ? AND ditambahkan_oleh_user_id = ?", markerID, ownerUserID).First(&marker).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -169,11 +183,11 @@ func (tc *TravelController) UpdateMarker(c *gin.Context) {
 	}
 
 	// Perbarui field yang disediakan dalam input
-	if input.Nama != nil {
-		marker.Nama = *input.Nama
+	if input.Name != nil {
+		marker.Name = *input.Name
 	}
-	if input.Deskripsi != nil {
-		marker.Deskripsi = *input.Deskripsi
+	if input.Description != nil {
+		marker.Description = input.Description
 	}
 	if input.Latitude != nil {
 		marker.Latitude = *input.Latitude
@@ -182,7 +196,7 @@ func (tc *TravelController) UpdateMarker(c *gin.Context) {
 		marker.Longitude = *input.Longitude
 	}
 
-	marker.DiperbaruiPada = time.Now() // Perbarui timestamp DiperbaruiPada
+	marker.UpdatedAt = time.Now() // Perbarui timestamp UpdatedAt
 
 	if err := tc.DB.Save(&marker).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update marker: " + err.Error()})
@@ -208,14 +222,14 @@ func (tc *TravelController) DeleteMarker(c *gin.Context) {
 		return
 	}
 
-	var marker models.Place
+	var marker models.Marker
 	// Jika role admin, izinkan hapus marker apapun; jika bukan, hanya marker miliknya
 	role, _ := c.Get("role")
 	var err error
 	if role == "admin" {
 		err = tc.DB.Where("id = ?", markerID).First(&marker).Error
 	} else {
-		err = tc.DB.Where("id = ? AND ditambahkan_oleh_user_id = ?", markerID, ownerUserID).First(&marker).Error
+		err = tc.DB.Where("id = ? AND added_by_user_id = ?", markerID, ownerUserID).First(&marker).Error
 	}
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
