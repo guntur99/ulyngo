@@ -15,15 +15,15 @@ import (
 	"gorm.io/gorm" // Import gorm untuk akses database
 )
 
-// TravelController struct akan menampung dependensi database
-type TravelController struct {
+// MarkerController struct akan menampung dependensi database
+type MarkerController struct {
 	DB *gorm.DB
 }
 
-// NewTravelController adalah konstruktor untuk TravelController.
+// NewMarkerController adalah konstruktor untuk MarkerController.
 // Menerima instance GORM DB untuk dependency injection.
-func NewTravelController(db *gorm.DB) *TravelController {
-	return &TravelController{DB: db}
+func NewMarkerController(db *gorm.DB) *MarkerController {
+	return &MarkerController{DB: db}
 }
 
 // DirectionsRequest adalah struktur untuk data permintaan rute.
@@ -32,8 +32,8 @@ type DirectionsRequest struct {
 	Destination string `json:"destination"`
 }
 
-// GetDirections adalah metode dari TravelController yang mengambil rute dari Google Maps API.
-func (tc *TravelController) GetDirections(c *gin.Context) {
+// GetDirections adalah metode dari MarkerController yang mengambil rute dari Google Maps API.
+func (tc *MarkerController) GetDirections(c *gin.Context) {
 	var req DirectionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -75,8 +75,8 @@ func (tc *TravelController) GetDirections(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// GetMarkers adalah metode dari TravelController yang mengambil semua marker dari database.
-func (tc *TravelController) GetMarkers(c *gin.Context) {
+// GetMarkers adalah metode dari MarkerController yang mengambil semua marker dari database.
+func (tc *MarkerController) GetMarkers(c *gin.Context) {
 	var markers []models.Marker
 	// Menggunakan dependensi DB yang di-inject untuk mengambil markers
 	if err := tc.DB.Find(&markers).Error; err != nil {
@@ -97,9 +97,9 @@ type AddMarkerInput struct {
 
 }
 
-// AddMarker adalah metode dari TravelController yang menambahkan marker baru ke database.
+// AddMarker adalah metode dari MarkerController yang menambahkan marker baru ke database.
 // Membutuhkan token JWT dan akan menyimpan DitambahkanOlehUserId.
-func (tc *TravelController) AddMarker(c *gin.Context) {
+func (tc *MarkerController) AddMarker(c *gin.Context) {
 
 	var input AddMarkerInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -153,9 +153,9 @@ type UpdateMarkerInput struct {
 	UpdatedAt     *time.Time `json:"updated_at"`               // Ini tidak perlu di-update, hanya untuk referensi
 }
 
-// UpdateMarker adalah metode dari TravelController yang memperbarui marker yang sudah ada.
+// UpdateMarker adalah metode dari MarkerController yang memperbarui marker yang sudah ada.
 // Membutuhkan token JWT dan hanya bisa memperbarui marker yang dimiliki pengguna.
-func (tc *TravelController) UpdateMarker(c *gin.Context) {
+func (tc *MarkerController) UpdateMarker(c *gin.Context) {
 	markerID := c.Param("id") // Dapatkan ID marker dari parameter URL
 
 	var input UpdateMarkerInput
@@ -206,9 +206,9 @@ func (tc *TravelController) UpdateMarker(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Marker updated successfully", "marker": marker})
 }
 
-// DeleteMarker adalah metode dari TravelController yang menghapus marker.
+// DeleteMarker adalah metode dari MarkerController yang menghapus marker.
 // Membutuhkan token JWT dan hanya bisa menghapus marker yang dimiliki pengguna.
-func (tc *TravelController) DeleteMarker(c *gin.Context) {
+func (tc *MarkerController) DeleteMarker(c *gin.Context) {
 	markerID := c.Param("id")
 
 	userID, exists := c.Get("userID")

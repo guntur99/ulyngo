@@ -8,11 +8,13 @@ import (
 	"strings" // Import strings untuk AuthMiddleware
 
 	"ulyngo/controllers" // Import controllers
+	"ulyngo/db/seeders"  // Import seeders untuk seeding data awal
 	"ulyngo/models"      // Import models untuk AutoMigrate
 	"ulyngo/utils"       // Import utils
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"gorm.io/gorm"
 )
 
 // AuthMiddleware adalah middleware JWT dasar untuk melindungi rute.
@@ -54,6 +56,32 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+// DBRefresh menghapus semua tabel yang terkait dengan model dan kemudian melakukan AutoMigrate.
+// Ini SANGAT berisiko untuk produksi karena akan MENGHILANGKAN SEMUA DATA.
+// Gunakan HANYA untuk lingkungan pengembangan/pengujian.
+func DBRefresh(db *gorm.DB) {
+	log.Println("Starting database refresh (dropping all tables)...")
+	// Urutan penghapusan tabel penting jika ada foreign key constraints
+	// Tabel yang memiliki foreign key ke tabel lain harus dihapus terlebih dahulu
+	err := db.Migrator().DropTable(
+		&models.MarkerCategory{},
+		&models.MarkerTag{},
+		&models.User{},
+	)
+	if err != nil {
+		log.Fatalf("Failed to drop tables: %v", err)
+	}
+	log.Println("All tables dropped successfully.")
+
+	log.Println("Running AutoMigrate after refresh...")
+	db.AutoMigrate(
+		&models.User{},
+		&models.MarkerCategory{},
+		&models.MarkerTag{},
+	)
+	log.Println("AutoMigrate completed after refresh.")
+}
+
 func main() {
 	// Muat variabel lingkungan dari file .env
 	if err := godotenv.Load(); err != nil {
@@ -66,18 +94,31 @@ func main() {
 	// Ini akan membuat tabel jika belum ada, atau memperbarui skema.
 	// Jika ada perubahan tipe ID dari uint ke string (UUID), Anda mungkin perlu
 	// menghapus tabel lama di database Anda untuk migrasi yang bersih saat pengembangan.
-	utils.DB.AutoMigrate(
-		&models.User{},
-		&models.Preference{},
-		&models.Marker{},
-		&models.MarkerImage{},
-		&models.MarkerCategory{},
-		&models.MarkerTag{},
-		&models.MarkerHasTag{}, // Jika Anda ingin GORM mengelola tabel join ini secara eksplisit
-		&models.MarkerReview{},
-		&models.Route{},
-		&models.UserActivityLog{},
-	)
+	// Cek apakah ada argumen --seed
+	if len(os.Args) > 1 && os.Args[1] == "--seed" {
+		// Jalankan refresh database jika --seed diberikan
+		DBRefresh(utils.DB) // Hapus dan recreate tabel
+		seeders.RunAllSeeders(utils.DB)
+		log.Println("Seeding complete. Server will now start with seeded data.")
+		// Jika Anda hanya ingin seeding tanpa menjalankan server, uncomment baris di bawah:
+		// os.Exit(0)
+	} else {
+		// Jika tidak ada argumen --seed, hanya lakukan AutoMigrate
+		log.Println("Running AutoMigrate...")
+		utils.DB.AutoMigrate(
+			&models.User{},
+			&models.Preference{},
+			&models.MarkerCategory{},
+			&models.MarkerTag{},
+			&models.MarkerHasTag{},
+			&models.Marker{},
+			&models.MarkerImage{},
+			&models.MarkerReview{},
+			&models.Route{},
+			&models.UserActivityLog{},
+		)
+		log.Println("AutoMigrate completed.")
+	}
 
 	// Mengatur mode Gin (misal: debug, release)
 	gin.SetMode(gin.ReleaseMode) // Disarankan untuk produksi
@@ -115,7 +156,7 @@ func main() {
 
 	// Inisialisasi controller dengan dependensi database yang sudah terhubung
 	authController := controllers.NewAuthController(utils.DB)
-	travelController := controllers.NewTravelController(utils.DB)
+	markerController := controllers.NewMarkerController(utils.DB)
 
 	// Grup Rute Autentikasi
 	authRoutes := router.Group("/auth")
@@ -125,8 +166,8 @@ func main() {
 	}
 
 	// Rute Perjalanan (Beberapa rute bersifat publik, beberapa dilindungi)
-	router.POST("/route", travelController.GetDirections) // Publik
-	router.GET("/markers", travelController.GetMarkers)   // Publik (mendapatkan semua marker, tidak difilter berdasarkan user)
+	router.POST("/route", markerController.GetDirections) // Publik
+	router.GET("/markers", markerController.GetMarkers)   // Publik (mendapatkan semua marker, tidak difilter berdasarkan user)
 
 	// Rute CRUD Marker yang Dilindungi dengan AuthMiddleware
 	protectedMarkerRoutes := router.Group("/api/markers")
@@ -145,9 +186,9 @@ func main() {
 	protectedMarkerRoutes.Use(AuthMiddleware(), adminOnly) // Sekarang AuthMiddleware akan mengizinkan OPTIONS
 	{
 		// Mengubah rute POST dari "/" menjadi "" untuk menghilangkan trailing slash
-		protectedMarkerRoutes.POST("", travelController.AddMarker)          // Menambah marker
-		protectedMarkerRoutes.PUT("/:id", travelController.UpdateMarker)    // Memperbarui marker berdasarkan ID
-		protectedMarkerRoutes.DELETE("/:id", travelController.DeleteMarker) // Menghapus marker berdasarkan ID
+		protectedMarkerRoutes.POST("", markerController.AddMarker)          // Menambah marker
+		protectedMarkerRoutes.PUT("/:id", markerController.UpdateMarker)    // Memperbarui marker berdasarkan ID
+		protectedMarkerRoutes.DELETE("/:id", markerController.DeleteMarker) // Menghapus marker berdasarkan ID
 	}
 
 	// Mendapatkan port dari variabel lingkungan, default ke 3000
