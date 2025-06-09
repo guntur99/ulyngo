@@ -13,6 +13,7 @@ func RunAllSeeders(db *gorm.DB) {
 	SeedUsers(db)
 	SeedMarkerCategories(db)
 	SeedMarkerTags(db)
+	SeedUserActivityLogs(db)
 	// Tambahkan panggilan ke fungsi seeder lain di sini jika Anda membuatnya
 
 	log.Println("All database seeding completed.")

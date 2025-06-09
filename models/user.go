@@ -25,7 +25,7 @@ type User struct {
 	Markers       []Marker          `gorm:"foreignKey:AddedByUserID" json:"markers,omitempty"`
 	MarkerReviews []MarkerReview    `gorm:"foreignKey:UserID" json:"marker_reviews,omitempty"`
 	Routes        []Route           `gorm:"foreignKey:UserID" json:"routes,omitempty"`
-	ActivityLogs  []UserActivityLog `gorm:"foreignKey:UserID" json:"activity_logs,omitempty"`
+	ActivityLogs  []UserActivityLog `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"users_activity_logs,omitempty"`
 }
 
 // BeforeCreate hook untuk User: Otomatis menghasilkan UUID untuk User.ID jika belum ada.

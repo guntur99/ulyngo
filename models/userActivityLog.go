@@ -18,7 +18,7 @@ type UserActivityLog struct {
 	Timestamp    time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"timestamp"`      // Waktu aktivitas
 
 	// Relasi (opsional)
-	User User `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	User User `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"user,omitempty"`
 	// Target ini bersifat polimorfik (bisa Marker atau Route), sehingga relasi GORM tidak didefinisikan langsung di sini.
 	// Penanganan target biasanya dilakukan secara manual dalam kode aplikasi.
 }
