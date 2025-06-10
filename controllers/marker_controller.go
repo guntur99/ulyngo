@@ -1,11 +1,7 @@
 package controllers
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net/http"
-	"os"
 	"time" // Import time untuk UpdateMarker
 
 	"ulyngo/models"
@@ -30,49 +26,6 @@ func NewMarkerController(db *gorm.DB) *MarkerController {
 type DirectionsRequest struct {
 	Origin      string `json:"origin"`
 	Destination string `json:"destination"`
-}
-
-// GetDirections adalah metode dari MarkerController yang mengambil rute dari Google Maps API.
-func (tc *MarkerController) GetDirections(c *gin.Context) {
-	var req DirectionsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	googleMapsAPIKey := os.Getenv("GOOGLE_MAPS_API_KEY")
-	if googleMapsAPIKey == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Google Maps API Key not set"})
-		return
-	}
-
-	// Membangun URL untuk Google Directions API
-	url := fmt.Sprintf("https://maps.googleapis.com/maps/api/directions/json?origin=%s&destination=%s&key=%s",
-		req.Origin, req.Destination, googleMapsAPIKey)
-
-	// Melakukan permintaan HTTP ke Google Directions API
-	resp, err := http.Get(url)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch directions from Google Maps"})
-		return
-	}
-	defer resp.Body.Close() // Pastikan body response ditutup
-
-	// Membaca body response
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read Google Maps response"})
-		return
-	}
-
-	var result map[string]interface{}
-	// Mem-parse JSON response
-	if err := json.Unmarshal(body, &result); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Google Maps response"})
-		return
-	}
-
-	c.JSON(http.StatusOK, result)
 }
 
 // GetMarkers adalah metode dari MarkerController yang mengambil semua marker dari database.

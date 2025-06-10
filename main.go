@@ -157,20 +157,26 @@ func main() {
 	// Inisialisasi controller dengan dependensi database yang sudah terhubung
 	authController := controllers.NewAuthController(utils.DB)
 	markerController := controllers.NewMarkerController(utils.DB)
+	markerCategoryController := controllers.NewMarkerCategoryController(utils.DB)
+	markerTagController := controllers.NewMarkerTagController(utils.DB)
 
 	// Grup Rute Autentikasi
-	authRoutes := router.Group("/auth")
+	authRoutes := router.Group("/api/auth")
 	{
 		authRoutes.POST("/register", authController.Register)
 		authRoutes.POST("/login", authController.Login)
 	}
 
 	// Rute Perjalanan (Beberapa rute bersifat publik, beberapa dilindungi)
-	router.POST("/route", markerController.GetDirections) // Publik
-	router.GET("/markers", markerController.GetMarkers)   // Publik (mendapatkan semua marker, tidak difilter berdasarkan user)
+	router.POST("/api/route", markerController.GetDirections)                       // Publik
+	router.GET("/api/markers", markerController.GetMarkers)                         // Publik (mendapatkan semua marker, tidak difilter berdasarkan user)
+	router.GET("/api/marker/categories", markerCategoryController.GetAllCategories) // Publik (mendapatkan semua kategori marker)
+	router.GET("/api/marker/tags", markerTagController.GetAllTags)                  // Publik (mendapatkan semua tag marker)
 
 	// Rute CRUD Marker yang Dilindungi dengan AuthMiddleware
 	protectedMarkerRoutes := router.Group("/api/markers")
+	protectedMarkerCategoriesRoutes := router.Group("/api/marker/categories")
+	protectedMarkerTagsRoutes := router.Group("/api/marker/tags")
 	// Middleware untuk membatasi akses hanya untuk role admin
 	adminOnly := func(c *gin.Context) {
 		role, exists := c.Get("role")
@@ -189,6 +195,22 @@ func main() {
 		protectedMarkerRoutes.POST("", markerController.AddMarker)          // Menambah marker
 		protectedMarkerRoutes.PUT("/:id", markerController.UpdateMarker)    // Memperbarui marker berdasarkan ID
 		protectedMarkerRoutes.DELETE("/:id", markerController.DeleteMarker) // Menghapus marker berdasarkan ID
+	}
+
+	// Rute Marker Categories
+	protectedMarkerCategoriesRoutes.Use(AuthMiddleware(), adminOnly)
+	{
+		protectedMarkerCategoriesRoutes.POST("", markerCategoryController.CreateCategory)
+		protectedMarkerCategoriesRoutes.PUT("/:id", markerCategoryController.UpdateCategory)
+		protectedMarkerCategoriesRoutes.DELETE("/:id", markerCategoryController.DeleteCategory)
+	}
+
+	// Rute Marker Tags
+	protectedMarkerTagsRoutes.Use(AuthMiddleware(), adminOnly)
+	{
+		protectedMarkerTagsRoutes.POST("", markerTagController.CreateTag)
+		protectedMarkerTagsRoutes.PUT("/:id", markerTagController.UpdateTag)
+		protectedMarkerTagsRoutes.DELETE("/:id", markerTagController.DeleteTag)
 	}
 
 	// Mendapatkan port dari variabel lingkungan, default ke 3000
