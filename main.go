@@ -194,9 +194,10 @@ func main() {
 	protectedServicesRoutes.Use(AuthMiddleware())
 	{
 		// Rute rute (termasuk penyimpanan ke DB, sekarang dilindungi)
-		protectedServicesRoutes.POST("/routes", routeController.GetDirections)               // Pindahkan ke protectedRoutes
-		protectedServicesRoutes.POST("/places/search", routeController.SearchPlaces)         // Pindahkan ke protectedRoutes
-		protectedServicesRoutes.POST("/analyze-sentiment", routeController.AnalyzeSentiment) // Pindahkan ke protectedRoutes
+		// protectedServicesRoutes.POST("/routes", routeController.GetDirections)               // Pindahkan ke protectedRoutes
+		// protectedServicesRoutes.POST("/places/search", routeController.SearchPlaces)         // Pindahkan ke protectedRoutes
+		// protectedServicesRoutes.POST("/analyze-sentiment", routeController.AnalyzeSentiment) // Pindahkan ke protectedRoutes
+		protectedServicesRoutes.POST("/plan-trip", routeController.PlanTripFromQuery)
 	}
 
 	// --- PERBAIKAN CORS PREFLIGHT: AuthMiddleware() sudah disesuaikan ---

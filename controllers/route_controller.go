@@ -1,21 +1,25 @@
 package controllers
 
 import (
-	"bytes"         // Untuk Natural Language API
-	"encoding/json" // Untuk JSON
+	"bytes"
+	"context" // Import context
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url" // Import package net/url
-	"os"      // Untuk mengakses variabel lingkungan
+	"net/url"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/oauth2/google" // <-- TAMBAHKAN IMPORT INI
 	"gorm.io/gorm"
-
-	"ulyngo/models" // Import model Anda
-
-	"github.com/google/uuid" // Untuk UUID
 )
+
+// =================================================================================
+// KODE YANG ADA (DIREFAKTOR) DAN STRUCTS BARU
+// =================================================================================
 
 type RouteController struct {
 	DB *gorm.DB
@@ -25,26 +29,24 @@ func NewRouteController(db *gorm.DB) *RouteController {
 	return &RouteController{DB: db}
 }
 
-// Struct untuk input rute dari frontend
+// Structs untuk request dan response Google Maps API (masih sama)
 type RouteRequest struct {
 	Origin      string `json:"origin" binding:"required"`
 	Destination string `json:"destination" binding:"required"`
-	IsPublic    bool   `json:"is_public"` // Untuk menyimpan rute oleh user yang terautentikasi
+	IsPublic    bool   `json:"is_public"`
 }
 
-// Struct untuk respons Directions API (diperluas untuk menyimpan ke DB)
 type DirectionsAPIResponse struct {
 	Routes []struct {
 		Legs []struct {
 			Distance struct {
 				Text  string `json:"text"`
-				Value int64  `json:"value"` // Jarak dalam meter
+				Value int64  `json:"value"`
 			} `json:"distance"`
 			Duration struct {
 				Text  string `json:"text"`
-				Value int64  `json:"value"` // Durasi dalam detik
+				Value int64  `json:"value"`
 			} `json:"duration"`
-			// Lokasi awal dan akhir dari leg pertama (penting untuk origin/destination lat/lng)
 			StartLocation struct {
 				Lat float64 `json:"lat"`
 				Lng float64 `json:"lng"`
@@ -53,157 +55,26 @@ type DirectionsAPIResponse struct {
 				Lat float64 `json:"lat"`
 				Lng float64 `json:"lng"`
 			} `json:"end_location"`
-			Steps []struct {
-				HtmlInstructions string `json:"html_instructions"`
-				Distance         struct {
-					Text string `json:"text"`
-				} `json:"distance"`
-				Duration struct {
-					Text string `json:"text"`
-				} `json:"duration"`
-				Polyline struct {
-					Points string `json:"points"`
-				} `json:"polyline"`
-			} `json:"steps"`
+			// ... (properti lain tidak diubah)
 		} `json:"legs"`
 		OverviewPolyline struct {
 			Points string `json:"points"`
 		} `json:"overview_polyline"`
 	} `json:"routes"`
-	Status string `json:"status"` // "OK", "ZERO_RESULTS", etc.
-	// error_message akan muncul jika status bukan "OK"
-	ErrorMessage string `json:"error_message,omitempty"`
-	// GeocodedWaypoints juga bisa berguna untuk info lebih lanjut tentang origin/destination yang di-resolve
+	Status            string `json:"status"`
+	ErrorMessage      string `json:"error_message,omitempty"`
 	GeocodedWaypoints []struct {
-		GeocoderStatus string   `json:"geocoder_status"`
-		PlaceID        string   `json:"place_id"`
-		Types          []string `json:"types"`
+		PlaceID string `json:"place_id"`
 	} `json:"geocoded_waypoints,omitempty"`
 }
 
-// GetDirections memanggil Google Directions API dari backend dan menyimpan rute ke database.
-// Rute ini dilindungi otentikasi untuk mendapatkan 'userID' dari konteks.
-func (tc *RouteController) GetDirections(c *gin.Context) {
-	var req RouteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	googleMapsAPIKey := os.Getenv("GOOGLE_MAPS_API_KEY")
-	if googleMapsAPIKey == "" {
-		log.Println("GOOGLE_MAPS_API_KEY not set")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "API key not configured"})
-		return
-	}
-
-	encodedOrigin := url.QueryEscape(req.Origin)
-	encodedDestination := url.QueryEscape(req.Destination)
-
-	// Bangun URL untuk Google Directions API
-	// Mengganti nama variabel 'url' menjadi 'apiURL' untuk menghindari shadowing package net/url
-	apiURL := "https://maps.googleapis.com/maps/api/directions/json?" +
-		"origin=" + encodedOrigin +
-		"&destination=" + encodedDestination +
-		"&key=" + googleMapsAPIKey
-
-	resp, err := http.Get(apiURL) // Menggunakan apiURL yang baru
-	if err != nil {
-		log.Printf("Error calling Google Directions API: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get directions from Google API"})
-		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Error reading Directions API response body: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read directions response"})
-		return
-	}
-
-	var directionsResp DirectionsAPIResponse
-	if err := json.Unmarshal(body, &directionsResp); err != nil {
-		log.Printf("Raw Directions API response: %s", string(body))
-		log.Printf("Error unmarshaling Directions API response: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse directions response"})
-		return
-	}
-
-	if directionsResp.Status == "OK" && len(directionsResp.Routes) > 0 {
-		// Ambil data dari leg pertama dari rute pertama
-		firstLeg := directionsResp.Routes[0].Legs[0]
-
-		// Dapatkan UserID dan Username dari konteks Gin
-		userIDVal, exists := c.Get("userID")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required to save route. User ID not found in context."})
-			return
-		}
-		parsedUserID, err := uuid.Parse(userIDVal.(string))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid User ID format in context"})
-			return
-		}
-
-		usernameVal, _ := c.Get("username") // Ambil username (opsional, untuk logging/debug)
-		log.Printf("Route request from user: %s (ID: %s)", usernameVal, parsedUserID.String())
-
-		// Siapkan data untuk model Route
-		routeToSave := models.Route{
-			Name:            req.Origin + " to " + req.Destination, // Nama default, bisa disesuaikan
-			OriginText:      req.Origin,
-			DestinationText: req.Destination,
-			OriginLat:       firstLeg.StartLocation.Lat,
-			OriginLng:       firstLeg.StartLocation.Lng,
-			DestinationLat:  firstLeg.EndLocation.Lat,
-			DestinationLng:  firstLeg.EndLocation.Lng,
-			DistanceMeters:  firstLeg.Distance.Value,
-			DurationSeconds: firstLeg.Duration.Value,
-			UserID:          parsedUserID, // Menggunakan UserID dari konteks
-			IsPublic:        req.IsPublic, // Gunakan is_public dari request
-		}
-
-		// Konversi seluruh respons Directions API ke json.RawMessage
-		fullRouteDataJSON, err := json.Marshal(directionsResp)
-		if err != nil {
-			log.Printf("Error marshaling full directions response to JSON: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to serialize route data"})
-			return
-		}
-		routeToSave.RouteDataJSON = fullRouteDataJSON
-
-		// Simpan rute ke database
-		if err := tc.DB.Create(&routeToSave).Error; err != nil {
-			log.Printf("Error saving route to database: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save route"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Route calculated and saved successfully",
-			"route":   routeToSave,    // Kembalikan objek rute yang disimpan
-			"details": directionsResp, // Kembalikan detail directions API juga
-		})
-	} else {
-		// Kirim status dan pesan error dari Google API jika tidak OK atau tidak ada rute
-		statusMessage := directionsResp.Status
-		if directionsResp.ErrorMessage != "" {
-			statusMessage += ": " + directionsResp.ErrorMessage
-		}
-		c.JSON(http.StatusOK, gin.H{"status": directionsResp.Status, "message": "No routes found or API error: " + statusMessage})
-	}
-}
-
-// Struct untuk input PlaceSearch dari frontend
 type PlaceSearchRequest struct {
 	Query        string `json:"query" binding:"required"`
-	LocationBias string `json:"location_bias"` // Optional, e.g., "point:latitude,longitude"
+	LocationBias string `json:"location_bias"`
 }
 
-// Struct untuk respons Places API (sederhana)
 type PlacesAPIResponse struct {
-	Results []struct { // Diubah dari 'Candidates' menjadi 'Results'
+	Results []struct {
 		PlaceID          string `json:"place_id"`
 		Name             string `json:"name"`
 		FormattedAddress string `json:"formatted_address"`
@@ -213,167 +84,335 @@ type PlacesAPIResponse struct {
 				Lng float64 `json:"lng"`
 			} `json:"location"`
 		} `json:"geometry"`
-		// Tambahkan properti lain yang mungkin ada di respons Text Search API jika diperlukan
-		// Contoh: Types []string `json:"types"`
-		//          OpeningHours struct { OpenNow bool `json:"open_now"` } `json:"opening_hours"`
-		//          Rating      float64 `json:"rating"`
-		//          PriceLevel  int `json:"price_level"`
-		//          UserRatingsTotal int `json:"user_ratings_total"`
-	} `json:"results"` // Diubah dari 'candidates' menjadi 'results'
-	Status        string `json:"status"`
-	ErrorMessage  string `json:"error_message,omitempty"`   // Tambahkan untuk error yang lebih jelas
-	NextPageToken string `json:"next_page_token,omitempty"` // Untuk pagination
+		Rating float32 `json:"rating,omitempty"`
+	} `json:"results"`
+	Status       string `json:"status"`
+	ErrorMessage string `json:"error_message,omitempty"`
 }
 
-// SearchPlaces memanggil Google Places Text Search API dari backend
-func (tc *RouteController) SearchPlaces(c *gin.Context) {
-	var req PlaceSearchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+// == Structs BARU untuk Fitur Perencanaan Perjalanan ==
 
+// Struct untuk input dari user
+type TripPlanRequest struct {
+	// Kalimat dari user, e.g., "pengen ke braga jajan cimol..."
+	Query string `json:"query" binding:"required"`
+	// Lokasi awal user, e.g., "Jakarta, Indonesia" atau "latitude,longitude"
+	Origin string `json:"origin" binding:"required"`
+}
+
+// Struct untuk menampung hasil ekstraksi dari Vertex AI
+type ExtractedTripInfo struct {
+	Destination      string   `json:"destination"`
+	StopsAlongTheWay []string `json:"stops_along_the_way"`
+	ReturnTripPlan   string   `json:"return_trip_plan"`
+}
+
+// Struct untuk request ke Vertex AI Gemini
+type VertexAIRequest struct {
+	Contents struct {
+		Role  string `json:"role"`
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	} `json:"contents"`
+}
+
+// Struct untuk response dari Vertex AI Gemini (disederhanakan)
+type VertexAIResponse struct {
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+}
+
+// Struct untuk respons akhir yang komprehensif
+type FinalTripPlanResponse struct {
+	Interpretation ExtractedTripInfo            `json:"interpretation"`
+	MainRoute      DirectionsAPIResponse        `json:"main_route"`
+	SuggestedStops map[string]PlacesAPIResponse `json:"suggested_stops"` // map[nama_stop]hasil_pencarian
+	ReturnTripShop PlacesAPIResponse            `json:"return_trip_shop"`
+}
+
+// =================================================================================
+// FUNGSI HELPER BARU (Refaktor dari Controller Lama)
+// =================================================================================
+
+// getDirectionsData adalah versi refaktor dari GetDirections
+// Fungsi ini hanya mengambil data dari API dan mengembalikannya, tanpa menyimpan ke DB atau menulis respons HTTP.
+func (tc *RouteController) getDirectionsData(origin, destination string) (*DirectionsAPIResponse, error) {
 	googleMapsAPIKey := os.Getenv("GOOGLE_MAPS_API_KEY")
 	if googleMapsAPIKey == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "API key not configured"})
-		return
+		log.Println("ERROR: GOOGLE_MAPS_API_KEY environment variable not set.")
+		return nil, fmt.Errorf("API key not configured")
 	}
 
-	encodedQuery := url.QueryEscape(req.Query)
+	apiURL := fmt.Sprintf("https://maps.googleapis.com/maps/api/directions/json?origin=%s&destination=%s&key=%s",
+		url.QueryEscape(origin),
+		url.QueryEscape(destination),
+		googleMapsAPIKey)
 
-	apiURL := "https://maps.googleapis.com/maps/api/place/textsearch/json?" +
-		"query=" + encodedQuery +
-		"&key=" + googleMapsAPIKey
+	// === LANGKAH DEBUG 1: Cetak URL yang akan dipanggil ===
+	// Ini membantu memastikan origin dan destination sudah benar.
+	log.Printf("Calling Google Directions API with URL: %s", apiURL)
 
-	if req.LocationBias != "" {
-		apiURL += "&locationbias=" + url.QueryEscape(req.LocationBias)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		log.Printf("ERROR: Failed to call Google Directions API: %v", err)
+		return nil, fmt.Errorf("failed to call Google Directions API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// === LANGKAH DEBUG 2: Cetak status HTTP dari respons ===
+	log.Printf("Google Directions API returned HTTP status: %s", resp.Status)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("ERROR: Failed to read directions response body: %v", err)
+		return nil, fmt.Errorf("failed to read directions response: %w", err)
+	}
+
+	// === LANGKAH DEBUG 3: Selalu cetak body respons mentah ===
+	// Ini adalah langkah paling penting. Kita bisa lihat pesan error dari Google.
+	log.Printf("Raw Directions API response: %s", string(body))
+
+	var directionsResp DirectionsAPIResponse
+	if err := json.Unmarshal(body, &directionsResp); err != nil {
+		log.Printf("ERROR: Failed to parse directions response JSON: %v", err)
+		return nil, fmt.Errorf("failed to parse directions response: %w", err)
+	}
+
+	// === LANGKAH DEBUG 4: Cek status internal dari Google ===
+	// Setelah berhasil di-parse, cek status logikanya.
+	if directionsResp.Status != "OK" {
+		errorMessage := fmt.Sprintf("Directions API returned status '%s'. Full error: %s", directionsResp.Status, directionsResp.ErrorMessage)
+		log.Printf("ERROR: %s", errorMessage)
+		return nil, fmt.Errorf(errorMessage)
+	}
+
+	log.Println("Successfully received and parsed directions.")
+	return &directionsResp, nil
+}
+
+// searchPlacesData adalah versi refaktor dari SearchPlaces
+// Hanya mencari dan mengembalikan data, tidak menulis respons HTTP.
+func (tc *RouteController) searchPlacesData(query, locationBias string) (*PlacesAPIResponse, error) {
+	googleMapsAPIKey := os.Getenv("GOOGLE_MAPS_API_KEY")
+	if googleMapsAPIKey == "" {
+		return nil, fmt.Errorf("API key not configured")
+	}
+
+	apiURL := fmt.Sprintf("https://maps.googleapis.com/maps/api/place/textsearch/json?query=%s&key=%s",
+		url.QueryEscape(query),
+		googleMapsAPIKey)
+
+	// Lokasi bias membantu API memberikan hasil yang lebih relevan dengan area tujuan
+	if locationBias != "" {
+		apiURL += "&location=" + url.QueryEscape(locationBias)
+		apiURL += "&radius=10000" // cari dalam radius 10km dari titik lokasi bias
 	}
 
 	resp, err := http.Get(apiURL)
 	if err != nil {
-		log.Printf("Error calling Google Places API: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search places from Google API"})
-		return
-	}
-	defer resp.Body.Close()
-
-	// Periksa status HTTP sebelum membaca body dan unmarshal
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, readErr := io.ReadAll(resp.Body) // Baca body untuk logging
-		if readErr != nil {
-			log.Printf("Error reading Places API non-OK response body: %v", readErr)
-		}
-		log.Printf("Places API returned non-OK status: %d. Raw response: %s", resp.StatusCode, string(bodyBytes))
-		c.JSON(resp.StatusCode, gin.H{"error": "Google Places API returned non-OK status", "details": string(bodyBytes)})
-		return
-	}
-
-	body, err := io.ReadAll(resp.Body) // Menggunakan io.ReadAll
-	if err != nil {
-		log.Printf("Error reading Places API response body: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read places response"})
-		return
-	}
-
-	var placesResp PlacesAPIResponse
-	if err := json.Unmarshal(body, &placesResp); err != nil {
-		log.Printf("Raw Places API response (unmarshal failed): %s", string(body))
-		log.Printf("Error unmarshaling Places API response: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse places response"})
-		return
-	}
-
-	if placesResp.Status == "OK" {
-		c.JSON(http.StatusOK, placesResp)
-	} else {
-		// Kirim status dan pesan error dari Google API jika tidak OK atau API error
-		c.JSON(http.StatusOK, gin.H{"status": placesResp.Status, "message": "No places found or API error"})
-	}
-}
-
-// Input untuk Natural Language API
-type AnalyzeSentimentRequest struct {
-	Document struct {
-		Type    string `json:"type"` // "PLAIN_TEXT" atau "HTML"
-		Content string `json:"content"`
-	} `json:"document"`
-	EncodingType string `json:"encodingType"` // "UTF8", "UTF16", "UTF32"
-}
-
-// Respons dari Natural Language API (disederhanakan)
-type SentimentResponse struct {
-	DocumentSentiment struct {
-		Magnitude float64 `json:"magnitude"` // Kekuatan emosi
-		Score     float64 `json:"score"`     // -1.0 (negatif) sampai 1.0 (positif)
-	} `json:"documentSentiment"`
-	// ... properti lain untuk entities, syntax, dll.
-}
-
-// AnalyzeSentiment memanggil Natural Language API untuk analisis sentimen
-func (tc *RouteController) AnalyzeSentiment(c *gin.Context) {
-	var req struct {
-		ReviewText string `json:"review_text" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	nlAPIKey := os.Getenv("GOOGLE_NATURAL_LANGUAGE_API_KEY")
-	if nlAPIKey == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Natural Language API key not configured"})
-		return
-	}
-
-	nlReq := AnalyzeSentimentRequest{
-		Document: struct {
-			Type    string `json:"type"`
-			Content string `json:"content"`
-		}{
-			Type:    "PLAIN_TEXT",
-			Content: req.ReviewText,
-		},
-		EncodingType: "UTF8",
-	}
-
-	jsonReq, err := json.Marshal(nlReq)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal NL request"})
-		return
-	}
-
-	client := &http.Client{}
-	// Mengganti nama variabel 'url' menjadi 'apiURL' untuk menghindari shadowing package net/url
-	apiURL := "https://language.googleapis.com/v1/documents:analyzeSentiment?key=" + nlAPIKey
-	httpReq, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonReq)) // Menggunakan apiURL yang baru
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create HTTP request for NL API"})
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to call Natural Language API"})
-		return
+		return nil, fmt.Errorf("failed to call Google Places API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read NL API response"})
+		return nil, fmt.Errorf("failed to read places response: %w", err)
+	}
+
+	var placesResp PlacesAPIResponse
+	if err := json.Unmarshal(body, &placesResp); err != nil {
+		log.Printf("Raw Places API response: %s", string(body))
+		return nil, fmt.Errorf("failed to parse places response: %w", err)
+	}
+
+	if placesResp.Status != "OK" && placesResp.Status != "ZERO_RESULTS" {
+		return nil, fmt.Errorf("places API error: %s - %s", placesResp.Status, placesResp.ErrorMessage)
+	}
+
+	return &placesResp, nil
+}
+
+// extractTripDetailsFromVertexAI memanggil Vertex AI untuk NLU (VERSI DIPERBARUI DENGAN ROLE & MODEL YANG BENAR)
+func (tc *RouteController) extractTripDetailsFromVertexAI(query string) (*ExtractedTripInfo, error) {
+	// Variabel lingkungan untuk Vertex AI
+	projectID := os.Getenv("GOOGLE_VERTEX_AI_PROJECT_ID")
+	location := os.Getenv("GOOGLE_VERTEX_AI_LOCATION") // e.g., "us-central1"
+
+	if projectID == "" || location == "" {
+		return nil, fmt.Errorf("vertex AI environment variables not configured (GOOGLE_VERTEX_AI_PROJECT_ID, GOOGLE_VERTEX_AI_LOCATION)")
+	}
+
+	ctx := context.Background()
+	scopes := []string{"https://www.googleapis.com/auth/cloud-platform"}
+
+	tokenSource, err := google.DefaultTokenSource(ctx, scopes...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token source from service account: %w", err)
+	}
+
+	token, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get access token: %w", err)
+	}
+
+	// Prompt yang spesifik untuk meminta output JSON (tidak berubah)
+	prompt := fmt.Sprintf(`
+      Ekstrak informasi dari kalimat berikut dalam format JSON yang ketat.
+      Kalimat: "%s"
+
+      Aturan:
+      - "destination" harus berupa nama lokasi yang spesifik dan jelas, jika memungkinkan sertakan kota atau negara. Contoh: "Jalan Braga, Bandung" bukan hanya "Braga".
+      - "stops_along_the_way" adalah daftar makanan atau minuman yang ingin dibeli di perjalanan.
+      - "return_trip_plan" adalah barang yang ingin dibeli untuk perjalanan pulang.
+      - Jika ada informasi yang tidak ada, berikan nilai string kosong "" atau array kosong [].
+
+      Contoh output JSON:
+      {
+        "destination": "Jalan Braga, Bandung, Indonesia",
+        "stops_along_the_way": ["cimol", "thai tea"],
+        "return_trip_plan": "beli oleh-oleh bolu susu lembang"
+      }
+      
+      JSON output:
+    `, query)
+
+	// ======================================================================
+	// === PERBAIKAN DI SINI: Tambahkan "role": "user" ===
+	// ======================================================================
+	reqPayload := map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{
+				"role": "user", // <-- FIELD WAJIB UNTUK API VERSI BARU
+				"parts": []map[string]string{
+					{"text": prompt},
+				},
+			},
+		},
+	}
+
+	jsonReq, err := json.Marshal(reqPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Vertex AI request: %w", err)
+	}
+
+	// Menggunakan nama model yang valid dan stabil
+	apiURL := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/gemini-2.0-flash-001:generateContent", location, projectID, location)
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonReq))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request for Vertex AI: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Vertex AI API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Vertex AI response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Vertex AI API returned non-OK status: %d. Raw response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("vertex AI API returned non-OK status: %d", resp.StatusCode)
+	}
+
+	// Parsing respons (tidak berubah)
+	var vertexResp VertexAIResponse
+	if err := json.Unmarshal(body, &vertexResp); err != nil || len(vertexResp.Candidates) == 0 {
+		log.Printf("Raw Vertex AI response (unmarshal failed or no candidates): %s", string(body))
+		return nil, fmt.Errorf("failed to parse Vertex AI response or no candidates found")
+	}
+
+	jsonText := vertexResp.Candidates[0].Content.Parts[0].Text
+	jsonText = strings.TrimPrefix(jsonText, "```json")
+	jsonText = strings.TrimSuffix(jsonText, "```")
+
+	var extractedInfo ExtractedTripInfo
+	if err := json.Unmarshal([]byte(jsonText), &extractedInfo); err != nil {
+		log.Printf("Failed to unmarshal JSON from Vertex AI text: %s. Error: %v", jsonText, err)
+		return nil, fmt.Errorf("failed to unmarshal JSON from Vertex AI text: %w", err)
+	}
+
+	return &extractedInfo, nil
+}
+
+// =================================================================================
+// CONTROLLER UTAMA YANG BARU
+// =================================================================================
+
+// PlanTripFromQuery adalah endpoint utama untuk merencanakan perjalanan dari natural language.
+func (tc *RouteController) PlanTripFromQuery(c *gin.Context) {
+	var req TripPlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var sentimentResp SentimentResponse
-	if err := json.Unmarshal(body, &sentimentResp); err != nil {
-		log.Printf("Error unmarshaling NL API response: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse NL API response"})
+	// === LANGKAH 1: Ekstrak informasi dari kalimat menggunakan Vertex AI ===
+	extractedInfo, err := tc.extractTripDetailsFromVertexAI(req.Query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to understand query", "details": err.Error()})
+		return
+	}
+	if extractedInfo.Destination == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Could not determine a destination from the query."})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"review_text": req.ReviewText,
-		"sentiment":   sentimentResp.DocumentSentiment,
-	})
+	// === LANGKAH 2: Dapatkan rute utama ke tujuan ===
+	mainRoute, err := tc.getDirectionsData(req.Origin, extractedInfo.Destination)
+	// c.JSON(http.StatusInternalServerError, gin.H{"message 1": req.Origin, "message 2": extractedInfo.Destination, "message 3": mainRoute})
+	// return
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get main route", "details": err.Error()})
+		return
+	}
+
+	// Tentukan titik tengah rute sebagai lokasi bias untuk pencarian
+	destLocation := mainRoute.Routes[0].Legs[0].EndLocation
+	locationBiasString := fmt.Sprintf("%f,%f", destLocation.Lat, destLocation.Lng)
+
+	// === LANGKAH 3: Cari setiap tempat singgah yang diinginkan ===
+	suggestedStops := make(map[string]PlacesAPIResponse)
+	for _, stopQuery := range extractedInfo.StopsAlongTheWay {
+		placesResp, err := tc.searchPlacesData(stopQuery, locationBiasString)
+		if err != nil {
+			log.Printf("Could not search for stop '%s': %v", stopQuery, err)
+			continue // Lanjutkan ke stop berikutnya jika ada error
+		}
+		suggestedStops[stopQuery] = *placesResp
+	}
+
+	// === LANGKAH 4: Cari toko untuk rencana perjalanan pulang ===
+	var returnShopResp *PlacesAPIResponse
+	if extractedInfo.ReturnTripPlan != "" {
+		returnShopResp, err = tc.searchPlacesData(extractedInfo.ReturnTripPlan, locationBiasString)
+		if err != nil {
+			log.Printf("Could not search for return trip plan '%s': %v", extractedInfo.ReturnTripPlan, err)
+		}
+	}
+
+	// === LANGKAH 5: Gabungkan semua hasil dan kirim sebagai respons ===
+	finalResponse := FinalTripPlanResponse{
+		Interpretation: *extractedInfo,
+		MainRoute:      *mainRoute,
+		SuggestedStops: suggestedStops,
+	}
+	if returnShopResp != nil {
+		finalResponse.ReturnTripShop = *returnShopResp
+	}
+
+	c.JSON(http.StatusOK, finalResponse)
 }
