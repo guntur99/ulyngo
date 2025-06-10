@@ -159,6 +159,7 @@ func main() {
 	markerController := controllers.NewMarkerController(utils.DB)
 	markerCategoryController := controllers.NewMarkerCategoryController(utils.DB)
 	markerTagController := controllers.NewMarkerTagController(utils.DB)
+	routeController := controllers.NewRouteController(utils.DB)
 
 	// Grup Rute Autentikasi
 	authRoutes := router.Group("/api/auth")
@@ -168,7 +169,7 @@ func main() {
 	}
 
 	// Rute Perjalanan (Beberapa rute bersifat publik, beberapa dilindungi)
-	router.POST("/api/route", markerController.GetDirections)                       // Publik
+	// router.POST("/api/routes", routeController.GetDirections)                       // Publik
 	router.GET("/api/markers", markerController.GetMarkers)                         // Publik (mendapatkan semua marker, tidak difilter berdasarkan user)
 	router.GET("/api/marker/categories", markerCategoryController.GetAllCategories) // Publik (mendapatkan semua kategori marker)
 	router.GET("/api/marker/tags", markerTagController.GetAllTags)                  // Publik (mendapatkan semua tag marker)
@@ -177,6 +178,7 @@ func main() {
 	protectedMarkerRoutes := router.Group("/api/markers")
 	protectedMarkerCategoriesRoutes := router.Group("/api/marker/categories")
 	protectedMarkerTagsRoutes := router.Group("/api/marker/tags")
+	protectedServicesRoutes := router.Group("/api")
 	// Middleware untuk membatasi akses hanya untuk role admin
 	adminOnly := func(c *gin.Context) {
 		role, exists := c.Get("role")
@@ -186,6 +188,16 @@ func main() {
 			return
 		}
 		c.Next()
+	}
+
+	// Grup Rute yang Dilindungi (membutuhkan otentikasi)
+	protectedServicesRoutes.Use(AuthMiddleware())
+	{
+		// Rute rute (termasuk penyimpanan ke DB, sekarang dilindungi)
+		// protectedServicesRoutes.POST("/routes", routeController.GetDirections)               // Pindahkan ke protectedRoutes
+		// protectedServicesRoutes.POST("/places/search", routeController.SearchPlaces)         // Pindahkan ke protectedRoutes
+		// protectedServicesRoutes.POST("/analyze-sentiment", routeController.AnalyzeSentiment) // Pindahkan ke protectedRoutes
+		protectedServicesRoutes.POST("/plan-trip", routeController.PlanTripFromQuery)
 	}
 
 	// --- PERBAIKAN CORS PREFLIGHT: AuthMiddleware() sudah disesuaikan ---
