@@ -101,9 +101,9 @@ type UpdateMarkerInput struct {
 	Description   *string    `json:"description"`
 	Latitude      *float64   `json:"latitude"`
 	Longitude     *float64   `json:"longitude"`
-	CategoryID    *uuid.UUID `json:"category_id"`              // Tambahkan CategoryID
-	AddedByUserID *string    `json:"ditambahkan_oleh_user_id"` // Ini tidak perlu di-update, hanya untuk referensi
-	UpdatedAt     *time.Time `json:"updated_at"`               // Ini tidak perlu di-update, hanya untuk referensi
+	CategoryID    *uuid.UUID `json:"category_id"`      // Tambahkan CategoryID
+	AddedByUserID *string    `json:"added_by_user_id"` // Ini tidak perlu di-update, hanya untuk referensi
+	UpdatedAt     *time.Time `json:"updated_at"`       // Ini tidak perlu di-update, hanya untuk referensi
 }
 
 // UpdateMarker adalah metode dari MarkerController yang memperbarui marker yang sudah ada.
@@ -126,7 +126,7 @@ func (tc *MarkerController) UpdateMarker(c *gin.Context) {
 
 	var marker models.Marker
 	// Cari marker berdasarkan ID dan pastikan DitambahkanOlehUserId cocok (kepemilikan)
-	if err := tc.DB.Where("id = ? AND ditambahkan_oleh_user_id = ?", markerID, ownerUserID).First(&marker).Error; err != nil {
+	if err := tc.DB.Where("id = ? AND added_by_user_id = ?", markerID, ownerUserID).First(&marker).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Marker not found or you don't have permission to update it"})
 		} else {
