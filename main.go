@@ -85,7 +85,7 @@ func DBRefresh(db *gorm.DB) {
 func main() {
 	// Muat variabel lingkungan dari file .env
 	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
+		log.Printf("Warning: Error loading .env file: %v", err)
 	}
 
 	// Inisialisasi koneksi database
