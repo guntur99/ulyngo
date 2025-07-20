@@ -200,8 +200,7 @@ func main() {
 		protectedServicesRoutes.POST("/plan-trip", routeController.PlanTripFromQuery)
 	}
 
-	// --- PERBAIKAN CORS PREFLIGHT: AuthMiddleware() sudah disesuaikan ---
-	protectedMarkerRoutes.Use(AuthMiddleware(), adminOnly) // Sekarang AuthMiddleware akan mengizinkan OPTIONS
+	protectedMarkerRoutes.Use(AuthMiddleware(), adminOnly)
 	{
 		// Mengubah rute POST dari "/" menjadi "" untuk menghilangkan trailing slash
 		protectedMarkerRoutes.POST("", markerController.AddMarker)          // Menambah marker
