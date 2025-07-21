@@ -85,7 +85,7 @@ func DBRefresh(db *gorm.DB) {
 }
 
 func main() {
-	// LOCAL DEVELOPMENT NOTE:
+	// START LOCAL MODE
 	// Muat variabel lingkungan dari file .env
 	// if err := godotenv.Load(); err != nil {
 	// 	log.Printf("Warning: Error loading .env file: %v", err)
@@ -93,20 +93,31 @@ func main() {
 
 	// os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 
+	// Create Google Cloud client
+	// ctx := context.Background()
+	// client, err := storage.NewClient(ctx)
+	// if err != nil {
+	// 	log.Fatalf("Failed to create client: %v", err)
+	// }
+	// defer client.Close()
+
+	// log.Println("Google Cloud Storage client created successfully.")
+	// END LOCAL MODE
+
 	credsJSON := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 	if credsJSON == "" {
-		log.Fatal("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON is missing or empty")
+		log.Fatal("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON not found")
 	}
-	// Create Google Cloud client
+
+	// Inisialisasi client dengan credentials dari JSON string
 	ctx := context.Background()
-	// client, err := storage.NewClient(ctx)
 	client, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credsJSON)))
 	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
+		log.Fatalf("❌ Failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	log.Println("Google Cloud Storage client created successfully.")
+	log.Println("✅ GCS client created successfully")
 
 	// Inisialisasi koneksi database
 	utils.ConnectDatabase()
