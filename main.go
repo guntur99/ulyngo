@@ -15,7 +15,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
+	"google.golang.org/api/option"
 	"gorm.io/gorm"
 )
 
@@ -85,16 +85,19 @@ func DBRefresh(db *gorm.DB) {
 }
 
 func main() {
+	// LOCAL DEVELOPMENT NOTE:
 	// Muat variabel lingkungan dari file .env
-	if err := godotenv.Load(); err != nil {
-		log.Printf("Warning: Error loading .env file: %v", err)
-	}
+	// if err := godotenv.Load(); err != nil {
+	// 	log.Printf("Warning: Error loading .env file: %v", err)
+	// }
 
-	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+	// os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 
+	credsJSON := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 	// Create Google Cloud client
 	ctx := context.Background()
-	client, err := storage.NewClient(ctx)
+	// client, err := storage.NewClient(ctx)
+	client, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credsJSON)))
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
