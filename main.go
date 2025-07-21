@@ -94,6 +94,9 @@ func main() {
 	// os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 
 	credsJSON := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+	if credsJSON == "" {
+		log.Fatal("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON is missing or empty")
+	}
 	// Create Google Cloud client
 	ctx := context.Background()
 	// client, err := storage.NewClient(ctx)
