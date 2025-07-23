@@ -15,7 +15,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/gin-gonic/gin"
-	"google.golang.org/api/option"
+	"github.com/joho/godotenv"
 	"gorm.io/gorm"
 )
 
@@ -87,35 +87,34 @@ func DBRefresh(db *gorm.DB) {
 func main() {
 	// START LOCAL MODE
 	// Muat variabel lingkungan dari file .env
-	// if err := godotenv.Load(); err != nil {
-	// 	log.Printf("Warning: Error loading .env file: %v", err)
-	// }
-
-	// os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-
-	// Create Google Cloud client
-	// ctx := context.Background()
-	// client, err := storage.NewClient(ctx)
-	// if err != nil {
-	// 	log.Fatalf("Failed to create client: %v", err)
-	// }
-	// defer client.Close()
-
-	// log.Println("Google Cloud Storage client created successfully.")
-	// END LOCAL MODE
-
-	credsJSON := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-	if credsJSON == "" {
-		log.Fatal("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON not found")
+	if err := godotenv.Load(); err != nil {
+		log.Printf("Warning: Error loading .env file: %v", err)
 	}
 
-	// Inisialisasi client dengan credentials dari JSON string
+	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+
+	//Create Google Cloud client
 	ctx := context.Background()
-	client, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credsJSON)))
+	client, err := storage.NewClient(ctx)
 	if err != nil {
-		log.Fatalf("❌ Failed to create client: %v", err)
+		log.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
+
+	// END LOCAL MODE
+
+	// credsJSON := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+	// if credsJSON == "" {
+	// 	log.Fatal("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON not found")
+	// }
+
+	// // Inisialisasi client dengan credentials dari JSON string
+	// ctx := context.Background()
+	// client, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(credsJSON)))
+	// if err != nil {
+	// 	log.Fatalf("❌ Failed to create client: %v", err)
+	// }
+	// defer client.Close()
 
 	log.Println("✅ GCS client created successfully")
 
