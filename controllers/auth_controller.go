@@ -61,7 +61,7 @@ func (ac *AuthController) Register(c *gin.Context) {
 		Username:     input.Username,
 		Password:     string(hashedPassword), // Menyimpan hash password
 		Email:        input.Email,            // Menyimpan email yang diterima dari input
-		Role:         "admin",                // Menetapkan role default sebagai "user"
+		Role:         "user",                 // Menetapkan role default sebagai "user"
 		Whatsapp:     input.Whatsapp,         // Menyimpan nomor WhatsApp jika ada
 		LastActiveAt: input.LastActiveAt,     // Menyimpan waktu terakhir aktif jika ada
 	}
