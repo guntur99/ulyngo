@@ -139,6 +139,7 @@ func (ac *AuthController) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token, "user": gin.H{
 		"id":       user.ID,
 		"username": user.Username,
+		"email":    user.Email,
 		"role":     user.Role,
 	}})
 	c.Set("userID", user.ID)         // Set userID ke konteks Gin untuk akses di middleware
