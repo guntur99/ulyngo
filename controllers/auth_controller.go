@@ -145,5 +145,6 @@ func (ac *AuthController) Login(c *gin.Context) {
 	c.Set("userID", user.ID)         // Set userID ke konteks Gin untuk akses di middleware
 	c.Set("username", user.Username) // Set username ke konteks Gin
 	c.Set("role", user.Role)         // Set role ke konteks Gin
-	c.Next()                         // Lanjutkan ke handler berikutnya
+	c.Set("email", user.Email)
+	c.Next() // Lanjutkan ke handler berikutnya
 }
