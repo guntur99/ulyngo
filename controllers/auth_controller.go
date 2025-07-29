@@ -117,7 +117,7 @@ func (ac *AuthController) Login(c *gin.Context) {
 	}
 
 	// Membuat JWT untuk pengguna yang berhasil login
-	token, err := utils.GenerateToken(user.ID.String(), user.Username, user.Role) // Meneruskan ID (string) dan Role
+	token, err := utils.GenerateToken(user.ID.String(), user.Username, user.Role, user.Email) // Meneruskan ID (string) dan Role
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return

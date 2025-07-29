@@ -52,6 +52,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Ini dapat diakses oleh handler selanjutnya menggunakan c.Get("key")
 		c.Set("userID", claims["sub"])
 		c.Set("username", claims["username"])
+		c.Set("email", claims["email"])
 		c.Set("role", claims["role"])
 
 		c.Next() // Lanjutkan ke handler berikutnya

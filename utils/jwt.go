@@ -14,10 +14,11 @@ var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
 // GenerateToken membuat JWT baru untuk pengguna yang diberikan.
 // Menerima userID (string), username (string), dan role (string) untuk dimasukkan ke dalam claims.
-func GenerateToken(userID string, username string, role string) (string, error) {
+func GenerateToken(userID string, username string, role string, email string) (string, error) {
 	claims := jwt.MapClaims{
-		"sub":      userID,                                // Subject: ID pengguna
-		"username": username,                              // Username pengguna
+		"sub":      userID,   // Subject: ID pengguna
+		"username": username, // Username pengguna
+		"email":    email,
 		"role":     role,                                  // Role pengguna
 		"exp":      time.Now().Add(time.Hour * 24).Unix(), // Kadaluarsa dalam 24 jam
 	}
