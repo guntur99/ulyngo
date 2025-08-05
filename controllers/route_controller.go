@@ -263,22 +263,88 @@ func (tc *RouteController) extractTripDetailsFromVertexAI(query string) (*Extrac
 
 	// Prompt yang spesifik untuk meminta output JSON (tidak berubah)
 	prompt := fmt.Sprintf(`
-      Ekstrak informasi dari kalimat berikut dalam format JSON yang ketat.
+      Ekstrak dan inferensi informasi rencana perjalanan dari kalimat berikut ke dalam format JSON yang ketat. Fokus utama adalah menentukan moda transportasi yang paling mungkin dan preferensi rute.
       Kalimat: "%s"
 
       Aturan:
-      - "destination" harus berupa nama lokasi yang spesifik dan jelas, jika memungkinkan sertakan kota atau negara. Contoh: "Jalan Braga, Bandung" bukan hanya "Braga".
-      - "stops_along_the_way" adalah daftar makanan atau minuman yang ingin dibeli di perjalanan.
-      - "return_trip_plan" adalah barang yang ingin dibeli untuk perjalanan pulang.
-      - Jika ada informasi yang tidak ada, berikan nilai string kosong "" atau array kosong [].
+      1.  **destination**: Harus berupa nama lokasi tujuan yang spesifik. Sertakan kota atau negara jika memungkinkan.
+      2.  **travel_mode**: Objek yang berisi detail tentang cara perjalanan.
+          - **mode**: **Lakukan inferensi** untuk menentukan moda transportasi dengan logika prioritas berikut:
+              a. **Eksplisit**: Jika pengguna menyebut "mobil", gunakan "driving". Jika menyebut "motor", "motoran", atau "touring", gunakan "motorcycle".
+              b. **Implisit/Kontekstual (Sangat Penting)**: Jika pengguna menggunakan frasa yang sangat mengindikasikan sepeda motor di konteks Indonesia seperti "lewat jalan tikus", "cari rute alternatif cepat", "selap-selip", atau "hindari ganjil-genap" (karena motor kebal ganjil-genap), **simpulkan sebagai "motorcycle"** bahkan jika kata 'motor' tidak disebut.
+              c. **Default**: Jika sama sekali tidak ada petunjuk eksplisit maupun implisit, gunakan "driving" sebagai nilai default yang paling aman.
+          - **preferences**: Array string berisi preferensi rute. Ekstrak dari frasa seperti "jangan lewat tol" (menjadi "avoid_tolls"), "hindari jalan raya" (menjadi "avoid_highways").
+      3.  **stops_along_the_way**: Array makanan, minuman, atau aktivitas singkat selama perjalanan.
+      4.  **return_trip_plan**: String rencana untuk perjalanan pulang.
+      5.  **Nilai Kosong**: Gunakan nilai kosong yang sesuai ( "", [], {} ) jika informasi tidak ditemukan.
 
-      Contoh output JSON:
+      ---
+      Contoh 1 (Eksplisit)
+      Kalimat: "Rute motoran ke Puncak, tapi jangan lewat tol ya."
+      Output JSON:
+      {
+        "destination": "Puncak, Bogor, Indonesia",
+        "travel_mode": {
+          "mode": "motorcycle",
+          "preferences": ["avoid_tolls"]
+        },
+        "stops_along_the_way": [],
+        "return_trip_plan": ""
+      }
+      ---
+      Contoh 2 (Implisit/Inferensi)
+      Kalimat: "Mau ke Kota Tua dari Bekasi, cariin jalan tikus dong biar cepet nyampe."
+      Output JSON:
+      {
+        "destination": "Kota Tua, Jakarta, Indonesia",
+        "travel_mode": {
+          "mode": "motorcycle", // Disimpulkan dari frasa "jalan tikus"
+          "preferences": []
+        },
+        "stops_along_the_way": [],
+        "return_trip_plan": ""
+      }
+      ---
+      Contoh 3 (Default)
+      Kalimat: "Tolong dong rute ke Lembang, mau beli oleh-oleh bolu susu."
+      Output JSON:
+      {
+        "destination": "Lembang, Bandung Barat, Indonesia",
+        "travel_mode": {
+          "mode": "driving", // Tidak ada petunjuk, maka default ke mobil
+          "preferences": []
+        },
+        "stops_along_the_way": [],
+        "return_trip_plan": "beli oleh-oleh bolu susu"
+      }
+      ---
+	  Contoh 4
+      Kalimat: "Aku mau ke Jalan Braga Bandung naik mobil, di jalan pengen jajan cimol sama thai tea. Pulangnya mau beli oleh-oleh bolu susu lembang."
+      Output JSON:
       {
         "destination": "Jalan Braga, Bandung, Indonesia",
+        "travel_mode": {
+          "mode": "driving",
+          "preferences": []
+        },
         "stops_along_the_way": ["cimol", "thai tea"],
         "return_trip_plan": "beli oleh-oleh bolu susu lembang"
       }
-      
+      ---
+      Contoh 5
+      Kalimat: "Rute motoran ke Puncak, tapi jangan lewat tol ya. Pengen ngopi dulu di jalan."
+      Output JSON:
+      {
+        "destination": "Puncak, Bogor, Indonesia",
+        "travel_mode": {
+          "mode": "motorcycle",
+          "preferences": ["avoid_tolls"]
+        },
+        "stops_along_the_way": ["ngopi"],
+        "return_trip_plan": ""
+      }
+      ---
+
       JSON output:
     `, query)
 
