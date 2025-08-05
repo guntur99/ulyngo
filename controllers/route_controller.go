@@ -211,7 +211,7 @@ func (tc *RouteController) searchPlacesData(query, locationBias string) (*Places
 	// Lokasi bias membantu API memberikan hasil yang lebih relevan dengan area tujuan
 	if locationBias != "" {
 		apiURL += "&location=" + url.QueryEscape(locationBias)
-		apiURL += "&radius=10000" // cari dalam radius 10km dari titik lokasi bias
+		apiURL += "&radius=100" // cari dalam radius 10km dari titik lokasi bias
 	}
 
 	resp, err := http.Get(apiURL)
