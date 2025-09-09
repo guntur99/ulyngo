@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http" // Import net/http untuk StatusUnauthorized
@@ -13,9 +12,7 @@ import (
 	"ulyngo/models"      // Import models untuk AutoMigrate
 	"ulyngo/utils"       // Import utils
 
-	"cloud.google.com/go/storage"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	"gorm.io/gorm"
 )
 
@@ -88,19 +85,19 @@ func DBRefresh(db *gorm.DB) {
 func main() {
 	// START LOCAL MODE
 	// Muat variabel lingkungan dari file .env
-	if err := godotenv.Load(); err != nil {
-		log.Printf("Warning: Error loading .env file: %v", err)
-	}
+	// if err := godotenv.Load(); err != nil {
+	// 	log.Printf("Warning: Error loading .env file: %v", err)
+	// }
 
-	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+	// os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 
-	//Create Google Cloud client
-	ctx := context.Background()
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
-	}
-	defer client.Close()
+	// //Create Google Cloud client
+	// ctx := context.Background()
+	// client, err := storage.NewClient(ctx)
+	// if err != nil {
+	// 	log.Fatalf("Failed to create client: %v", err)
+	// }
+	// defer client.Close()
 
 	// END LOCAL MODE
 
@@ -117,7 +114,7 @@ func main() {
 	// }
 	// defer client.Close()
 
-	log.Println("✅ GCS client created successfully")
+	// log.Println("✅ GCS client created successfully")
 
 	// Inisialisasi koneksi database
 	utils.ConnectDatabase()
