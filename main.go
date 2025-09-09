@@ -13,6 +13,7 @@ import (
 	"ulyngo/utils"       // Import utils
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"gorm.io/gorm"
 )
 
@@ -85,9 +86,9 @@ func DBRefresh(db *gorm.DB) {
 func main() {
 	// START LOCAL MODE
 	// Muat variabel lingkungan dari file .env
-	// if err := godotenv.Load(); err != nil {
-	// 	log.Printf("Warning: Error loading .env file: %v", err)
-	// }
+	if err := godotenv.Load(); err != nil {
+		log.Printf("Warning: Error loading .env file: %v", err)
+	}
 
 	// os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 
